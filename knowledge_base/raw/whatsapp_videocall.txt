@@ -1,0 +1,11 @@
+Task: How to make a WhatsApp video call
+
+Step 1: Open WhatsApp on your computer.
+Step 2: Click on the contact you want to call from the left side list.
+Step 3: Look for the video camera icon at the top right of the chat window.
+Step 4: Click the video camera icon.
+Step 5: Wait for the other person to pick up.
+
+Common problems:
+- If they don't answer, try again after some time.
+- If the camera is not working, make sure WhatsApp has permission to use your camera.

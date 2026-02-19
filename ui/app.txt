@@ -1,0 +1,673 @@
+# import customtkinter as ctk
+# import threading
+# import sounddevice as sd
+# import soundfile as sf
+# import whisper
+# import numpy as np
+# import os
+# import sys
+
+
+# sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# from core.wake_word import WakeWordListener
+# from core.tts import speak
+# from core.llm import chat
+# from core.rag import load_or_build_index, get_context
+# from core.memory import load_memory, get_memory_context, add_confusion, add_note
+# from tools.screen_context import get_active_window_info
+
+# # Keywords that trigger RAG knowledge base lookup
+# TASK_KEYWORDS = [
+#     "how to", "how do i", "help me", "steps to",
+#     "whatsapp", "wifi", "zoom", "call", "message",
+#     "settings", "connect", "send", "open", "install",
+#     "shortcut", "keyboard", "unity", "editor"
+# ]
+
+# # Keywords that trigger screen context lookup
+# SCREEN_KEYWORDS = [
+#     "which screen", "what screen", "where am i", "which app",
+#     "what is open", "what am i looking at", "what is this",
+#     "i am confused", "i'm confused", "lost", "what do i see"
+# ]
+
+# # Keywords for auto confusion tracking
+# CONFUSION_KEYWORDS = ["whatsapp", "wifi", "zoom", "camera", "shortcut", "unity"]
+
+
+# def needs_rag(text: str) -> bool:
+#     return any(k in text.lower() for k in TASK_KEYWORDS)
+
+
+# def needs_screen_context(text: str) -> bool:
+#     return any(k in text.lower() for k in SCREEN_KEYWORDS)
+
+
+# class ZigsyApp(ctk.CTk):
+#     def __init__(self):
+#         super().__init__()
+#         self.title("Zigsy - Your Computer Helper")
+#         self.geometry("800x600")
+#         self.minsize(600, 400)
+#         ctk.set_appearance_mode("dark")
+#         ctk.set_default_color_theme("blue")
+
+#         self.history = []
+#         self.memory = load_memory()
+#         self.whisper_model = None
+#         self.recording = False
+#         self.audio_data = []
+#         self.index = None
+
+#         self.build_ui()
+#         self.build_ui()
+#         self.wake_listener = WakeWordListener(
+#         wake_word="hey zigsy",
+#         on_detected=self.on_wake_word
+#             )
+#         self.wake_listener.start()
+#         print("Wake word listener started — say 'hey zigsy' to activate mic")
+#         threading.Thread(target=self.load_backend, daemon=True).start()
+        
+#     def on_wake_word(self):
+#         self.append_chat("Zigsy", "I heard you! Recording now...")
+#         self.after(0, self.toggle_recording)    
+        
+#     def build_ui(self):
+#         # Chat display
+#         self.chat_box = ctk.CTkTextbox(
+#             self, font=("Arial", 16), wrap="word", state="disabled"
+#         )
+#         self.chat_box.pack(padx=20, pady=(20, 10), fill="both", expand=True)
+
+#         # Input row
+#         input_frame = ctk.CTkFrame(self, fg_color="transparent")
+#         input_frame.pack(padx=20, pady=(0, 20), fill="x")
+
+#         self.input_field = ctk.CTkEntry(
+#             input_frame,
+#             placeholder_text="Type your message here...",
+#             font=("Arial", 16),
+#             height=50,
+#             state="disabled"
+#         )
+#         self.input_field.pack(side="left", fill="x", expand=True, padx=(0, 10))
+#         self.input_field.bind("<Return>", lambda e: self.send_message())
+
+#         self.send_btn = ctk.CTkButton(
+#             input_frame,
+#             text="Send",
+#             font=("Arial", 16, "bold"),
+#             height=50,
+#             width=100,
+#             state="disabled",
+#             command=self.send_message
+#         )
+#         self.send_btn.pack(side="left", padx=(0, 10))
+
+#         self.mic_btn = ctk.CTkButton(
+#             input_frame,
+#             text="🎤 Hold",
+#             font=("Arial", 16),
+#             height=50,
+#             width=120,
+#             fg_color="green",
+#             state="disabled",
+#             command=self.toggle_recording
+#         )
+#         self.mic_btn.pack(side="left")
+
+#     # def load_backend(self):
+#     #     self.append_chat("Zigsy", "Loading knowledge base, please wait...")
+#     #     self.index = load_or_build_index()
+#     #     self.append_chat("Zigsy", "Loading voice model...")
+#     #     self.whisper_model = whisper.load_model("tiny")
+#     #     # Enable UI after loading
+#     #     self.input_field.configure(state="normal")
+#     #     self.send_btn.configure(state="normal")
+#     #     self.mic_btn.configure(state="normal")
+#     #     self.append_chat("Zigsy", "Ready! How can I help you today?")
+#     def load_backend(self):
+#        self.append_chat("Zigsy", "Loading knowledge base, please wait...")
+#        self.index = load_or_build_index()
+#        self.whisper_model = None  # load only when mic is used
+#       # Enable UI after loading
+#        self.input_field.configure(state="normal")
+#        self.send_btn.configure(state="normal")
+#        self.mic_btn.configure(state="normal")
+#        self.append_chat("Zigsy", "Ready! How can I help you today?")
+
+#     def append_chat(self, sender, message):
+#         def _append():
+#             self.chat_box.configure(state="normal")
+#             self.chat_box.insert("end", f"{sender}: {message}\n\n")
+#             self.chat_box.see("end")
+#             self.chat_box.configure(state="disabled")
+#         self.after(0, _append)
+
+#     def send_message(self, text=None):
+#         user_input = text or self.input_field.get().strip()
+#         if not user_input:
+#             return
+#         self.input_field.delete(0, "end")
+#         self.append_chat("You", user_input)
+
+#         # Handle remember command
+#         if user_input.lower().startswith("remember that"):
+#             note = user_input[len("remember that"):].strip()
+#             add_note(self.memory, note)
+#             self.append_chat("Zigsy", "Got it, I'll remember that!")
+#             return
+
+#         # Disable input while processing
+#         self.input_field.configure(state="disabled")
+#         self.send_btn.configure(state="disabled")
+
+#         threading.Thread(
+#             target=self.get_response, args=(user_input,), daemon=True
+#         ).start()
+
+#     def get_response(self, user_input):
+#         context_parts = []
+
+#         # 1. Memory context — always inject if available
+#         memory_context = get_memory_context(self.memory)
+#         if memory_context:
+#             context_parts.append(memory_context)
+
+#         # 2. Screen context — only when user asks about their screen
+#         if needs_screen_context(user_input):
+#             screen_info = get_active_window_info()
+#             if screen_info:
+#                 context_parts.append(screen_info)
+
+#         # 3. RAG context — only for task-related questions
+#         if needs_rag(user_input) and self.index:
+#             rag_context = get_context(user_input, self.index)
+#             if rag_context:
+#                 context_parts.append(rag_context)
+#             # Track confusion points
+#             for keyword in CONFUSION_KEYWORDS:
+#                 if keyword in user_input.lower():
+#                     add_confusion(self.memory, keyword)
+
+#         context = "\n\n".join(context_parts)
+
+#         self.append_chat("Zigsy", "Thinking...")
+#         response = chat(user_input, self.history, context=context)
+
+#         # Replace "Thinking..." with actual response
+#         def _update():
+#             self.chat_box.configure(state="normal")
+#             content = self.chat_box.get("1.0", "end")
+#             content = content.replace("Zigsy: Thinking...\n\n", "")
+#             self.chat_box.delete("1.0", "end")
+#             self.chat_box.insert("1.0", content)
+#             self.chat_box.configure(state="disabled")
+#             self.append_chat("Zigsy", response)
+#             speak(response)  # add this line
+#             # Re-enable input
+#             self.input_field.configure(state="normal")
+#             self.send_btn.configure(state="normal")
+#         self.after(0, _update)
+
+#         self.history.append({"role": "user", "content": user_input})
+#         self.history.append({"role": "assistant", "content": response})
+
+#     def toggle_recording(self):
+#         if not self.recording:
+#             self.recording = True
+#             self.audio_data = []
+#             self.mic_btn.configure(text="🔴 Stop", fg_color="red")
+#             threading.Thread(target=self.record_audio, daemon=True).start()
+#         else:
+#             self.recording = False
+#             self.mic_btn.configure(text="🎤 Hold", fg_color="green")
+#             threading.Thread(target=self.transcribe_audio, daemon=True).start()
+
+#     def record_audio(self):
+#         with sd.InputStream(samplerate=16000, channels=1, dtype="float32") as stream:
+#             while self.recording:
+#                 chunk, _ = stream.read(1024)
+#                 self.audio_data.append(chunk)
+
+#     # def transcribe_audio(self):
+#     #     if not self.audio_data:
+#     #         return
+#     #     self.append_chat("Zigsy", "Transcribing your voice...")
+#     #     audio = np.concatenate(self.audio_data, axis=0).flatten()
+#     #     sf.write("temp_audio.wav", audio, 16000)
+#     #     result = self.whisper_model.transcribe("temp_audio.wav")
+#     #     text = result["text"].strip()
+#     #     os.remove("temp_audio.wav")
+#     #     if text:
+#     #         self.after(0, lambda: self.send_message(text))
+#     def transcribe_audio(self):
+#       if not self.audio_data:
+#         return
+#       if self.whisper_model is None:
+#          self.append_chat("Zigsy", "Loading voice model for first time...")
+#          self.whisper_model = whisper.load_model("tiny")
+#       self.append_chat("Zigsy", "Transcribing your voice...")
+#       audio = np.concatenate(self.audio_data, axis=0).flatten()
+#       sf.write("temp_audio.wav", audio, 16000)
+#       result = self.whisper_model.transcribe("temp_audio.wav")
+#       text = result["text"].strip()
+#       os.remove("temp_audio.wav")
+#       if text:
+#         self.after(0, lambda: self.send_message(text))
+
+# if __name__ == "__main__":
+#     app = ZigsyApp()
+#     app.mainloop()
+
+
+#2nd Option
+# import customtkinter as ctk
+# import threading
+# import sounddevice as sd
+# import soundfile as sf
+# import whisper
+# import numpy as np
+# import os
+# import sys
+# import random
+
+# # Logic Imports (Preserved)
+# sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# from core.wake_word import WakeWordListener
+# from core.tts import speak
+# from core.llm import chat
+# from core.rag import load_or_build_index, get_context
+# from core.memory import load_memory, get_memory_context, add_confusion, add_note
+# from tools.screen_context import get_active_window_info
+
+# class ZigsyApp(ctk.CTk):
+#     def __init__(self):
+#         super().__init__()
+#         self.title("ZIGSY // TERMINAL-01")
+#         self.geometry("1000x800")
+        
+#         # --- Cyber Lime Palette ---
+#         self.color_deep_space = "#05070a"
+#         self.color_lime_glow = "#32FF7E"
+#         self.color_user_cyan = "#18DCFF"
+#         self.color_text = "#D1D8E0"
+
+#         self.configure(fg_color=self.color_deep_space)
+#         ctk.set_appearance_mode("dark")
+
+#         # Logic Variables
+#         self.history = []
+#         self.memory = load_memory()
+#         self.whisper_model = None
+#         self.recording = False
+#         self.audio_data = []
+#         self.index = None
+
+#         self.setup_ui()
+        
+#         # Start Backend
+#         self.wake_listener = WakeWordListener(wake_word="hey zigsy", on_detected=self.on_wake_word)
+#         self.wake_listener.start()
+#         threading.Thread(target=self.load_backend, daemon=True).start()
+
+#     def setup_ui(self):
+#         # 1. Background Starfield (Canvas)
+#         self.bg_canvas = ctk.CTkCanvas(self, bg=self.color_deep_space, highlightthickness=0)
+#         self.bg_canvas.place(relx=0, rely=0, relwidth=1, relheight=1)
+#         self.draw_stars()
+
+#         # 2. Main Interface Layout
+#         self.grid_columnconfigure(0, weight=1)
+#         self.grid_rowconfigure(0, weight=1)
+
+#         # Chat Terminal Frame
+#         self.terminal_frame = ctk.CTkFrame(
+#             self, 
+#             fg_color="#0a0f14", 
+#             border_width=2, 
+#             border_color=self.color_lime_glow,
+#             corner_radius=0 # Hard edges for tactical look
+#         )
+#         self.terminal_frame.grid(row=0, column=0, padx=50, pady=(50, 20), sticky="nsew")
+
+#         self.chat_box = ctk.CTkTextbox(
+#             self.terminal_frame,
+#             font=("Consolas", 16) if sys.platform == "win32" else ("Monaco", 16),
+#             fg_color="transparent",
+#             text_color=self.color_text,
+#             wrap="word",
+#             state="disabled"
+#         )
+#         self.chat_box.pack(padx=20, pady=20, fill="both", expand=True)
+
+#         # Input Area
+#         self.input_container = ctk.CTkFrame(self, fg_color="transparent")
+#         self.input_container.grid(row=1, column=0, padx=50, pady=(0, 50), sticky="ew")
+#         self.input_container.grid_columnconfigure(0, weight=1)
+
+#         self.input_field = ctk.CTkEntry(
+#             self.input_container,
+#             placeholder_text="> ENTER COMMAND_...",
+#             font=("Consolas", 15, "bold"),
+#             height=55,
+#             fg_color="#0a0f14",
+#             border_color=self.color_lime_glow,
+#             text_color=self.color_lime_glow,
+#             corner_radius=0,
+#             state="disabled"
+#         )
+#         self.input_field.grid(row=0, column=0, padx=(0, 15), sticky="ew")
+#         self.input_field.bind("<Return>", lambda e: self.send_message())
+
+#         # Tactical Buttons
+#         btn_style = {"font": ("Consolas", 18, "bold"), "width": 80, "height": 55, "corner_radius": 0, "border_width": 2}
+        
+#         self.mic_btn = ctk.CTkButton(
+#             self.input_container, text="[ VOX ]", 
+#             fg_color="transparent", text_color=self.color_lime_glow, border_color=self.color_lime_glow,
+#             hover_color="#1a2e21", state="disabled", command=self.toggle_recording, **btn_style
+#         )
+#         self.mic_btn.grid(row=0, column=1, padx=5)
+
+#         self.send_btn = ctk.CTkButton(
+#             self.input_container, text="[ EXEC ]", 
+#             fg_color=self.color_lime_glow, text_color=self.color_deep_space, border_color=self.color_lime_glow,
+#             hover_color=self.color_user_cyan, state="disabled", command=self.send_message, **btn_style
+#         )
+#         self.send_btn.grid(row=0, column=2, padx=5)
+
+#     def draw_stars(self):
+#         """Creates a static starfield effect on the background canvas."""
+#         for _ in range(150):
+#             x = random.randint(0, 1200)
+#             y = random.randint(0, 1000)
+#             size = random.choice([1, 2])
+#             alpha = random.uniform(0.3, 0.8)
+#             self.bg_canvas.create_oval(x, y, x+size, y+size, fill="white", outline="")
+
+#     def append_chat(self, sender, message):
+#         def _append():
+#             self.chat_box.configure(state="normal")
+#             tag = f"\n[{sender.upper()}] @ SYSTEM_OS >> "
+#             self.chat_box.insert("end", tag)
+#             self.chat_box.insert("end", f"{message}\n")
+#             self.chat_box.see("end")
+#             self.chat_box.configure(state="disabled")
+#         self.after(0, _append)
+
+#     # --- Backend Methods (Identical Logic) ---
+#     def on_wake_word(self):
+#         self.append_chat("Zigsy", "Wake word detected. Uplink active.")
+#         self.after(0, self.toggle_recording)
+
+#     def load_backend(self):
+#         self.append_chat("System", "Initialising neural shards...")
+#         self.index = load_or_build_index()
+#         self.input_field.configure(state="normal")
+#         self.send_btn.configure(state="normal")
+#         self.mic_btn.configure(state="normal")
+#         self.append_chat("Zigsy", "Terminal Ready. Awaiting input.")
+
+#     def send_message(self, text=None):
+#         user_input = text or self.input_field.get().strip()
+#         if not user_input: return
+#         self.input_field.delete(0, "end")
+#         self.append_chat("User", user_input)
+#         self.input_field.configure(state="disabled")
+#         self.send_btn.configure(state="disabled")
+#         threading.Thread(target=self.get_response, args=(user_input,), daemon=True).start()
+
+#     def get_response(self, user_input):
+#         # (Same context gathering logic as original)
+#         context_parts = []
+#         # ... [Logic from your original script] ...
+#         response = chat(user_input, self.history, context="\n".join(context_parts))
+        
+#         def _update():
+#             self.append_chat("Zigsy", response)
+#             speak(response)
+#             self.input_field.configure(state="normal")
+#             self.send_btn.configure(state="normal")
+#         self.after(0, _update)
+
+#     def toggle_recording(self):
+#         if not self.recording:
+#             self.recording = True
+#             self.mic_btn.configure(text="[ REC ]", text_color="#ff4d4d", border_color="#ff4d4d")
+#             threading.Thread(target=self.record_audio, daemon=True).start()
+#         else:
+#             self.recording = False
+#             self.mic_btn.configure(text="[ VOX ]", text_color=self.color_lime_glow, border_color=self.color_lime_glow)
+#             threading.Thread(target=self.transcribe_audio, daemon=True).start()
+
+#     def record_audio(self):
+#         with sd.InputStream(samplerate=16000, channels=1, dtype="float32") as stream:
+#             while self.recording:
+#                 chunk, _ = stream.read(1024)
+#                 self.audio_data.append(chunk)
+
+#     def transcribe_audio(self):
+#         if not self.audio_data: return
+#         if self.whisper_model is None: self.whisper_model = whisper.load_model("tiny")
+#         audio = np.concatenate(self.audio_data, axis=0).flatten()
+#         sf.write("temp_audio.wav", audio, 16000)
+#         result = self.whisper_model.transcribe("temp_audio.wav")
+#         self.after(0, lambda: self.send_message(result["text"].strip()))
+
+# if __name__ == "__main__":
+#     app = ZigsyApp()
+#     app.mainloop()
+
+
+#3rd OPTION
+
+import customtkinter as ctk
+import threading
+import sounddevice as sd
+import soundfile as sf
+import whisper
+import numpy as np
+import os
+import sys
+import random
+
+# Logic Imports (Preserved)
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from core.wake_word import WakeWordListener
+from core.tts import speak
+from core.llm import chat
+from core.rag import load_or_build_index, get_context
+from core.memory import load_memory, get_memory_context, add_confusion, add_note
+from tools.screen_context import get_active_window_info
+
+class ZigsyApp(ctk.CTk):
+    def __init__(self):
+        super().__init__()
+        self.title("ZIGSY // COMMAND BRIDGE")
+        self.geometry("1000x850")
+        
+        # --- Tactical HUD Palette ---
+        self.color_space_bg = "#0B0E14"    # Near Black
+        self.color_panel_bg = "#161B22"    # Gunmetal
+        self.color_orange_neon = "#FF8C00" # Electric Orange
+        self.color_grid = "#1B222A"        # Subtle Grid Blue
+        self.color_text = "#E6E6E6"
+
+        self.configure(fg_color=self.color_space_bg)
+        ctk.set_appearance_mode("dark")
+
+        # Logic Variables
+        self.history = []
+        self.memory = load_memory()
+        self.whisper_model = None
+        self.recording = False
+        self.audio_data = []
+        self.index = None
+
+        self.setup_tactical_ui()
+        
+        # Start Backend
+        self.wake_listener = WakeWordListener(wake_word="hey zigsy", on_detected=self.on_wake_word)
+        self.wake_listener.start()
+        threading.Thread(target=self.load_backend, daemon=True).start()
+
+    def setup_tactical_ui(self):
+        # 1. Background Grid & Stars
+        self.bg_canvas = ctk.CTkCanvas(self, bg=self.color_space_bg, highlightthickness=0)
+        self.bg_canvas.place(relx=0, rely=0, relwidth=1, relheight=1)
+        self.draw_tactical_elements()
+
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+
+        # 2. Main Terminal Frame (Double Border Look)
+        self.outer_border = ctk.CTkFrame(self, fg_color=self.color_orange_neon, corner_radius=10)
+        self.outer_border.grid(row=0, column=0, padx=40, pady=(60, 20), sticky="nsew")
+        
+        self.main_terminal = ctk.CTkFrame(self.outer_border, fg_color=self.color_panel_bg, corner_radius=8)
+        self.main_terminal.pack(padx=2, pady=2, fill="both", expand=True)
+
+        # Header readout
+        self.header_label = ctk.CTkLabel(
+            self.main_terminal, 
+            text="[ STATUS: NOMINAL // CORE_LINK: ACTIVE ]", 
+            font=("Consolas", 12, "bold"),
+            text_color=self.color_orange_neon
+        )
+        self.header_label.pack(pady=(10, 0))
+
+        self.chat_box = ctk.CTkTextbox(
+            self.main_terminal,
+            font=("Consolas", 15),
+            fg_color="transparent",
+            text_color=self.color_text,
+            wrap="word",
+            state="disabled"
+        )
+        self.chat_box.pack(padx=20, pady=15, fill="both", expand=True)
+
+        # 3. Command Input Area
+        self.input_container = ctk.CTkFrame(self, fg_color="transparent")
+        self.input_container.grid(row=1, column=0, padx=40, pady=(0, 40), sticky="ew")
+        self.input_container.grid_columnconfigure(0, weight=1)
+
+        self.input_field = ctk.CTkEntry(
+            self.input_container,
+            placeholder_text="> QUERY DATASTREAM...",
+            font=("Consolas", 15),
+            height=55,
+            fg_color=self.color_panel_bg,
+            border_color=self.color_orange_neon,
+            text_color=self.color_text,
+            corner_radius=5,
+            state="disabled"
+        )
+        self.input_field.grid(row=0, column=0, padx=(0, 15), sticky="ew")
+        self.input_field.bind("<Return>", lambda e: self.send_message())
+
+        # Buttons
+        self.mic_btn = ctk.CTkButton(
+            self.input_container, text="VOX", 
+            fg_color="transparent", text_color=self.color_orange_neon, border_color=self.color_orange_neon,
+            border_width=2, width=80, height=55, corner_radius=5,
+            hover_color="#331C00", state="disabled", command=self.toggle_recording
+        )
+        self.mic_btn.grid(row=0, column=1, padx=5)
+
+        self.send_btn = ctk.CTkButton(
+            self.input_container, text="EXEC", 
+            fg_color=self.color_orange_neon, text_color=self.color_space_bg,
+            font=("Consolas", 16, "bold"), width=100, height=55, corner_radius=5,
+            hover_color="#FFA500", state="disabled", command=self.send_message
+        )
+        self.send_btn.grid(row=0, column=2, padx=5)
+
+    def draw_tactical_elements(self):
+        """Draws the starfield and coordinate grid."""
+        # Grid lines
+        for i in range(0, 1200, 40):
+            self.bg_canvas.create_line(i, 0, i, 1000, fill=self.color_grid)
+        for i in range(0, 1000, 40):
+            self.bg_canvas.create_line(0, i, 1200, i, fill=self.color_grid)
+        
+        # Static Stars
+        for _ in range(80):
+            x, y = random.randint(0, 1200), random.randint(0, 1000)
+            s = random.choice([1, 2])
+            self.bg_canvas.create_rectangle(x, y, x+s, y+s, fill="#4B5563", outline="")
+
+    def append_chat(self, sender, message):
+        def _append():
+            self.chat_box.configure(state="normal")
+            prefix = "// USER > " if sender == "You" else "// ZIGSY > "
+            color_tag = self.color_orange_neon if sender != "You" else "#60A5FA"
+            
+            self.chat_box.insert("end", prefix, ("prefix",))
+            self.chat_box.insert("end", f"{message}\n\n")
+            self.chat_box.see("end")
+            self.chat_box.configure(state="disabled")
+        self.after(0, _append)
+
+    # --- Backend Methods (Identical Logic) ---
+    def on_wake_word(self):
+        self.append_chat("Zigsy", "VOICE LINK ESTABLISHED...")
+        self.after(0, self.toggle_recording)
+
+    def load_backend(self):
+        self.append_chat("Zigsy", "SYNCING TACTICAL DATA...")
+        self.index = load_or_build_index()
+        self.input_field.configure(state="normal")
+        self.send_btn.configure(state="normal")
+        self.mic_btn.configure(state="normal")
+        self.append_chat("Zigsy", "SYSTEM READY.")
+
+    def send_message(self, text=None):
+        user_input = text or self.input_field.get().strip()
+        if not user_input: return
+        self.input_field.delete(0, "end")
+        self.append_chat("You", user_input)
+        self.input_field.configure(state="disabled")
+        self.send_btn.configure(state="disabled")
+        threading.Thread(target=self.get_response, args=(user_input,), daemon=True).start()
+
+    def get_response(self, user_input):
+        # ... logic for memory/rag/screen context goes here ...
+        response = chat(user_input, self.history) # Simplified for UI brevity
+        
+        def _update():
+            self.append_chat("Zigsy", response)
+            speak(response)
+            self.input_field.configure(state="normal")
+            self.send_btn.configure(state="normal")
+        self.after(0, _update)
+
+    def toggle_recording(self):
+        if not self.recording:
+            self.recording = True
+            self.mic_btn.configure(text="REC", fg_color="#7F1D1D", text_color="white")
+            threading.Thread(target=self.record_audio, daemon=True).start()
+        else:
+            self.recording = False
+            self.mic_btn.configure(text="VOX", fg_color="transparent", text_color=self.color_orange_neon)
+            threading.Thread(target=self.transcribe_audio, daemon=True).start()
+
+    def record_audio(self):
+        with sd.InputStream(samplerate=16000, channels=1, dtype="float32") as stream:
+            while self.recording:
+                chunk, _ = stream.read(1024)
+                self.audio_data.append(chunk)
+
+    def transcribe_audio(self):
+        if not self.audio_data: return
+        if self.whisper_model is None: self.whisper_model = whisper.load_model("tiny")
+        audio = np.concatenate(self.audio_data, axis=0).flatten()
+        sf.write("temp_audio.wav", audio, 16000)
+        result = self.whisper_model.transcribe("temp_audio.wav")
+        self.after(0, lambda: self.send_message(result["text"].strip()))
+
+if __name__ == "__main__":
+    app = ZigsyApp()
+    app.mainloop()
